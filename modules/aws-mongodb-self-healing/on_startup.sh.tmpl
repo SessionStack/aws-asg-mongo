@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+instance_id=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+region=$(
+  curl -s http://169.254.169.254/latest/dynamic/instance-identity/document |
+  grep region | sed -r 's/.* : "([0-9a-z-]+)".*$/\1/g')
+
+log() {
+  echo [$(date --iso-8601=seconds)] $*
+}
+
+wait_for_volume_to_attach() {
+  local limit=25
+  local retries=1
+
+  until [ -b $1 ] && [ $retries -lt $limit ]; do
+    sleep 0.2
+    retries=$((retries+1))
+  done
+
+  if [ $retries != $limit ]; then
+    log "$1 attached"
+  else
+    log "$1 timeout while attaching"
+  fi
+}
+
+attach_volume() {
+  if [ ! -b $3 ]; then
+    aws --region=$region ec2 attach-volume \
+      --volume-id $1 --instance-id $instance_id --device $2 && \
+      wait_for_volume_to_attach $3
+  else
+    log "$3 already attached"
+  fi
+}
+
+format_volume_with_xfs() {
+  # When booting the instance for the first time the EBS volume will not be
+  # properly formated. Format it but make sure it happens only on the first boot.
+  if [ "$(file -s $1)" == "$1: data" ]; then
+    mkfs -t xfs $1 && log "$1 formatted"
+  else
+    log "$1 already formatted"
+  fi
+}
+
+mount_volume() {
+  if ! (mount | grep /dev/xvdf > /dev/null) ; then
+    mkdir -p $2 && mount $1 $2 && log "$1 mounted to $2"
+  else
+    log "$1 already mounted to $2"
+  fi
+}
+
+setup_mongodb_server() {
+  chown -R mongodb:mongodb $1 && \
+    sed -i "s|dbPath:.*|dbPath: $1|" /etc/mongod.conf && \
+    systemctl start mongod.service && \
+    log "MongoDB started with db path $1"
+}
+
+complete_lifecycle_action() {
+  aws --region $region autoscaling complete-lifecycle-action \
+    --lifecycle-hook-name attach-storage-volume-and-launch \
+    --lifecycle-action-result CONTINUE \
+    --instance-id  $instance_id \
+    --auto-scaling-group-name $1 && log 'Lifecycle action completed'
+}
+
+attach_volume ${volume_id} /dev/sdf /dev/xvdf && \
+  format_volume_with_xfs /dev/xvdf && \
+  mount_volume /dev/xvdf /mnt/data && \
+  setup_mongodb_server /mnt/data && \
+  complete_lifecycle_action ${autoscalling_group_name}
