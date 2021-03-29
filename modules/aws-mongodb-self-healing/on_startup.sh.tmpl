@@ -9,30 +9,44 @@ log() {
   echo [$(date --iso-8601=seconds)] $*
 }
 
-wait_for_volume_to_attach() {
-  local limit=25
+wait_for_volume_to_be_available() {
+  sleep 2 # this is the hacky way of doing all of this
+}
+
+attach_volume() {
+  local lsblk_old_output_file=/tmp/lsblk-before-attach-$(date +%s)
+  lsblk | grep disk > $lsblk_old_output_file
+
+  aws --region=$region ec2 attach-volume --volume-id $1 --instance-id $instance_id --device /dev/sdf
+
+  if [ $? != 0 ]; then
+    log "$1 failed to attach"
+    return
+  fi
+
+  local limit=50
   local retries=1
 
-  until [ -b $1 ] && [ $retries -lt $limit ]; do
+  while (lsblk | grep disk | diff $lsblk_old_output_file - > /dev/null) && [ $retries -lt $limit ]; do
     sleep 0.2
     retries=$((retries+1))
   done
 
   if [ $retries != $limit ]; then
-    log "$1 attached"
+    local volume=/dev/$(
+      lsblk | grep disk | diff -u $lsblk_old_output_file - |
+      grep '^+' | grep -v '^+++' |
+      sed 's/^\+//' | awk '{print $1}'
+    )
+
+    until [ -b $volume ]; do sleep 1; done
+
+    log "$1 attached to $volume"
   else
     log "$1 timeout while attaching"
   fi
-}
 
-attach_volume() {
-  if [ ! -b $3 ]; then
-    aws --region=$region ec2 attach-volume \
-      --volume-id $1 --instance-id $instance_id --device $2 && \
-      wait_for_volume_to_attach $3
-  else
-    log "$3 already attached"
-  fi
+  rm $lsblk_old_output_file
 }
 
 format_volume_with_xfs() {
@@ -68,8 +82,17 @@ complete_lifecycle_action() {
     --auto-scaling-group-name $1 && log 'Lifecycle action completed'
 }
 
-attach_volume ${volume_id} /dev/sdf /dev/xvdf && \
-  format_volume_with_xfs /dev/xvdf && \
-  mount_volume /dev/xvdf /mnt/data && \
+attach_output=$(attach_volume ${volume_id})
+
+if ! echo $attach_output | grep attached > /dev/null; then
+  echo "$attach_output"
+  exit 1
+fi
+
+volume_device=$(echo $attach_output | sed 's/.*attached to //')
+
+wait_for_volume_to_be_available && \
+  format_volume_with_xfs $volume_device && \
+  mount_volume $volume_device /mnt/data && \
   setup_mongodb_server /mnt/data && \
   complete_lifecycle_action ${autoscalling_group_name}
