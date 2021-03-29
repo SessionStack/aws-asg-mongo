@@ -66,7 +66,7 @@ resource "aws_launch_template" "mongodb_launch_template" {
   }
 
   network_interfaces {
-    associate_public_ip_address = true
+    associate_public_ip_address = var.associate_public_ip_address
   }
 
   user_data = base64encode(

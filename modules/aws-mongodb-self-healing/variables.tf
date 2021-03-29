@@ -3,6 +3,12 @@ variable "instance_type" {
   type        = string
 }
 
+variable "associate_public_ip_address" {
+  description = "Flag indicating whether the MongoDB server has a public ip address"
+  type        = bool
+  default     = false
+}
+
 variable "ami" {
   description = "AMI ID used as a base to create new mongodb images"
   type        = string
