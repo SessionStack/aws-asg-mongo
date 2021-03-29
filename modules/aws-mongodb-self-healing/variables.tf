@@ -9,6 +9,12 @@ variable "associate_public_ip_address" {
   default     = false
 }
 
+variable "autoscalling_group_name" {
+  description = "Autoscalling group name"
+  type        = string
+  default     = ""
+}
+
 variable "ami" {
   description = "AMI ID used as a base to create new mongodb images"
   type        = string

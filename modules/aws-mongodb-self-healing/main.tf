@@ -1,7 +1,7 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  autoscalling_group_name = "tf-asg-${replace(timestamp(), "/[- TZ:]/", "")}"
+  autoscalling_group_name = var.autoscalling_group_name != "" ? var.autoscalling_group_name : "tf-asg-${replace(timestamp(), "/[- TZ:]/", "")}"
 }
 
 resource "aws_ebs_volume" "mongodb_data_storage" {
