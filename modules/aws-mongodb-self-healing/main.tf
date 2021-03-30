@@ -1,7 +1,12 @@
 data "aws_caller_identity" "current" {}
 
+data "aws_subnet" "subnet" {
+  id = var.subnet_id
+}
+
 locals {
   autoscalling_group_name = var.autoscalling_group_name != "" ? var.autoscalling_group_name : "tf-asg-${replace(timestamp(), "/[- TZ:]/", "")}"
+  load_balancer_name      = var.load_balancer_name != "" ? var.load_balancer_name : "tf-lb-${replace(timestamp(), "/[- TZ:]/", "")}"
 }
 
 resource "aws_ebs_volume" "mongodb_data_storage" {
@@ -77,6 +82,31 @@ resource "aws_launch_template" "mongodb_launch_template" {
   )
 }
 
+resource "aws_lb" "mongodb_lb" {
+  name               = local.load_balancer_name
+  internal           = true
+  load_balancer_type = "network"
+  subnets            = [var.subnet_id]
+}
+
+resource "aws_lb_target_group" "mongodb_lb_target_group" {
+  port        = 27017
+  protocol    = "TCP"
+  vpc_id      = data.aws_subnet.subnet.vpc_id
+  target_type = "instance"
+}
+
+resource "aws_lb_listener" "mongodb_lb_listener" {
+  load_balancer_arn = aws_lb.mongodb_lb.arn
+  port              = 27017
+  protocol          = "TCP"
+
+  default_action {
+    target_group_arn = aws_lb_target_group.mongodb_lb_target_group.arn
+    type             = "forward"
+  }
+}
+
 resource "aws_autoscaling_group" "mongodb_asg" {
   name                = local.autoscalling_group_name
   vpc_zone_identifier = [var.subnet_id]
@@ -84,6 +114,8 @@ resource "aws_autoscaling_group" "mongodb_asg" {
   max_size            = 1
   min_size            = 1
   health_check_type   = "EC2"
+
+  target_group_arns = [aws_lb_target_group.mongodb_lb_target_group.arn]
 
   launch_template {
     id      = aws_launch_template.mongodb_launch_template.id

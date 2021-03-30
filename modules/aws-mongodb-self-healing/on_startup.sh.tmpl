@@ -70,6 +70,7 @@ mount_volume() {
 setup_mongodb_server() {
   chown -R mongodb:mongodb $1 && \
     sed -i "s|dbPath:.*|dbPath: $1|" /etc/mongod.conf && \
+    sed -i "s|bindIp:.*|bindIp: 0.0.0.0|" /etc/mongod.conf && \
     systemctl start mongod.service && \
     log "MongoDB started with db path $1"
 }
@@ -79,7 +80,7 @@ complete_lifecycle_action() {
     --lifecycle-hook-name attach-storage-volume-and-launch \
     --lifecycle-action-result CONTINUE \
     --instance-id  $instance_id \
-    --auto-scaling-group-name $1 && log 'Lifecycle action completed'
+    --auto-scaling-group-name "$1" && log 'Lifecycle action completed'
 }
 
 attach_output=$(attach_volume ${volume_id})
