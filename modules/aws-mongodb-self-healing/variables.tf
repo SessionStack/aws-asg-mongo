@@ -3,6 +3,12 @@ variable "instance_type" {
   type        = string
 }
 
+variable "instance_tags" {
+  description = "Instance tags used to attach to the MongoDB server"
+  type        = map(any)
+  default     = {}
+}
+
 variable "associate_public_ip_address" {
   description = "Flag indicating whether the MongoDB server has a public ip address"
   type        = bool
@@ -12,13 +18,11 @@ variable "associate_public_ip_address" {
 variable "autoscalling_group_name" {
   description = "Autoscalling group name"
   type        = string
-  default     = ""
 }
 
 variable "load_balancer_name" {
   description = "Load balancer name"
   type        = string
-  default     = ""
 }
 
 variable "ami" {
